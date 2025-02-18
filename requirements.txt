@@ -1,0 +1,8 @@
+openai
+questionary
+termcolor
+python-dotenv
+send2trash
+psutil
+rich
+pyfiglet
