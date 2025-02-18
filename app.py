@@ -153,5 +153,5 @@ def main():
         console.print(f"\n💡 [cyan]{suggestion}[/cyan]")
 
 if __name__ == "__main__":
-    os.system("figlet -f anon 'TrHackNon Cleaner'")
+    os.system("figlet -f fontawesome-webfont 'TrHackNon Cleaner'")
     main()
