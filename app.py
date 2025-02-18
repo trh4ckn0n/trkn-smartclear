@@ -1,5 +1,4 @@
 import os
-import shutil
 import time
 import json
 import openai
@@ -13,28 +12,35 @@ from rich.table import Table
 from rich.prompt import Confirm
 import pyfiglet
 
-# 🔹 Chargement de la clé API depuis .env
+# 🔹 Chargement de la clé API
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai.api_key = OPENAI_API_KEY
 
 console = Console()
-
-# 🔹 Configuration des fichiers de préférences
 PREFS_FILE = "cleaner_prefs.json"
 
+# 🔹 Chargement des préférences
 def load_preferences():
     if os.path.exists(PREFS_FILE):
-        with open(PREFS_FILE, "r") as f:
-            return json.load(f)
+        try:
+            with open(PREFS_FILE, "r") as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            console.print("[red]⚠️ Erreur dans le fichier de préférences, réinitialisation...[/red]")
+            return {}
     return {}
 
 def save_preferences(prefs):
     with open(PREFS_FILE, "w") as f:
-        json.dump(prefs, f)
+        json.dump(prefs, f, indent=4)
 
-# 🔹 Scan des fichiers volumineux et anciens
+# 🔹 Scan du stockage
 def scan_storage(folder, size_limit=50, days_old=180):
+    if not os.path.exists(folder):
+        console.print(f"[red]❌ Le dossier {folder} n'existe pas.[/red]")
+        return []
+
     files = []
     now = time.time()
 
@@ -42,18 +48,18 @@ def scan_storage(folder, size_limit=50, days_old=180):
         for filename in filenames:
             file_path = os.path.join(root, filename)
             try:
-                size = os.path.getsize(file_path) / (1024 * 1024)  # Mo
-                last_access = os.path.getatime(file_path)
-                age_days = (now - last_access) / 86400  # Convertir en jours
-
-                if size > size_limit or age_days > days_old:
-                    files.append((file_path, size, age_days))
-            except:
+                if os.path.exists(file_path):
+                    size = os.path.getsize(file_path) / (1024 * 1024)  # Mo
+                    age_days = (now - os.path.getatime(file_path)) / 86400  # Jours
+                    if size > size_limit or age_days > days_old:
+                        files.append((file_path, size, age_days))
+            except Exception as e:
+                console.print(f"[yellow]⚠️ Erreur avec {file_path}: {e}[/yellow]")
                 continue
 
     return sorted(files, key=lambda x: x[1], reverse=True)
 
-# 🔹 Nettoyage des caches et fichiers temporaires
+# 🔹 Nettoyage des caches
 def clean_caches():
     cache_dirs = [
         "/sdcard/Android/data/com.whatsapp/cache/",
@@ -71,14 +77,15 @@ def clean_caches():
                 for filename in filenames:
                     file_path = os.path.join(root, filename)
                     try:
-                        os.remove(file_path)
-                        cleaned_files += 1
-                    except:
-                        continue
+                        if os.access(file_path, os.W_OK):  # Vérifie l'accès en écriture
+                            send2trash(file_path)
+                            cleaned_files += 1
+                    except Exception as e:
+                        console.print(f"[yellow]⚠️ Impossible de supprimer {file_path}: {e}[/yellow]")
 
     return cleaned_files
 
-# 🔹 Consultation de GPT-4 pour suggestions
+# 🔹 Consultation GPT-4
 def ask_gpt4(question):
     try:
         response = openai.ChatCompletion.create(
@@ -86,14 +93,16 @@ def ask_gpt4(question):
             messages=[{"role": "user", "content": question}]
         )
         return response["choices"][0]["message"]["content"]
-    except:
+    except Exception as e:
+        console.print(f"[red]⚠️ Erreur GPT-4: {e}[/red]")
         return "⚠️ Erreur de connexion à GPT-4."
 
 # 🔹 Interface utilisateur
 def main():
     console.print("\n🔍 [bold cyan]Scan du stockage en cours...[/bold cyan]")
-
-    files = scan_storage("/sdcard", size_limit=50, days_old=180)
+    
+    storage_path = "/sdcard" if os.path.exists("/sdcard") else "/storage/emulated/0"
+    files = scan_storage(storage_path, size_limit=50, days_old=180)
 
     if not files:
         console.print("[bold green]✅ Aucun fichier problématique trouvé.[/bold green]")
@@ -123,12 +132,13 @@ def main():
     if response == "🗑️ Supprimer les plus gros fichiers":
         confirmation = Confirm.ask("[bold red]Confirmer la suppression des fichiers volumineux ?[/bold red]")
         if confirmation:
-            for path, _, _ in files[:5]:  # Supprimer les 5 plus gros fichiers
-                try:
-                    send2trash(path)
-                    console.print(f"🗑️ [red]Supprimé : {path}[/red]")
-                except:
-                    console.print(f"⚠️ [yellow]Impossible de supprimer : {path}[/yellow]")
+            for path, _, _ in files[:5]:
+                if os.path.exists(path):
+                    try:
+                        send2trash(path)
+                        console.print(f"🗑️ [red]Supprimé : {path}[/red]")
+                    except Exception as e:
+                        console.print(f"⚠️ [yellow]Impossible de supprimer {path}: {e}[/yellow]")
         else:
             console.print("[green]❌ Suppression annulée.[/green]")
 
@@ -136,11 +146,12 @@ def main():
         confirmation = Confirm.ask("[bold red]Confirmer la suppression des fichiers vieux de plus de 6 mois ?[/bold red]")
         if confirmation:
             for path, _, _ in files[:5]:
-                try:
-                    send2trash(path)
-                    console.print(f"🗑️ [red]Supprimé : {path}[/red]")
-                except:
-                    console.print(f"⚠️ [yellow]Impossible de supprimer : {path}[/yellow]")
+                if os.path.exists(path):
+                    try:
+                        send2trash(path)
+                        console.print(f"🗑️ [red]Supprimé : {path}[/red]")
+                    except Exception as e:
+                        console.print(f"⚠️ [yellow]Impossible de supprimer {path}: {e}[/yellow]")
         else:
             console.print("[green]❌ Suppression annulée.[/green]")
 
