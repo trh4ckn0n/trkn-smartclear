@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 from rich.prompt import Confirm
+import pyfiglet
 
 # 🔹 Chargement de la clé API depuis .env
 load_dotenv()
@@ -153,5 +154,6 @@ def main():
         console.print(f"\n💡 [cyan]{suggestion}[/cyan]")
 
 if __name__ == "__main__":
-    os.system("figlet -f fontawesome-webfont 'TrHackNon Cleaner'")
+    title = pyfiglet.figlet_format("TrHackNon Cleaner", font="slant")
+    console.print(f"[bold cyan]{title}[/bold cyan]")
     main()
